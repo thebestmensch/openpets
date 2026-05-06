@@ -34,6 +34,14 @@ https://github.com/user-attachments/assets/fbad0d58-8040-4ebb-a26b-73fa497a4ceb
 
 Run from source. macOS-only as currently set up (rotation uses `launchd`).
 
+### 0. Prereqs
+
+[bun](https://bun.sh) on `$PATH`. If you don't have it:
+
+```bash
+curl -fsSL https://bun.sh/install | bash
+```
+
 ### 1. Clone and build
 
 ```bash
