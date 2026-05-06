@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Rotate the active OpenPets desktop pet to a random pick from JM's pet pack.
+#
+# Picks one of bean / gia / ruthie / couple at random and triggers a hot-swap
+# via `openpets install <path>` (uses the pet-v1 IPC capability when the
+# desktop is running, otherwise just updates ~/Library/Application Support/
+# OpenPets/config.json so the next launch picks it up).
+#
+# Usage:
+#   openpets-rotate                # pick at random
+#   openpets-rotate <name>         # force a specific pet (bean|gia|ruthie|couple)
+#
+# Wire it up:
+#   - Run on demand
+#   - Cron (every 30 min):  */30 * * * * /Users/jm/bin/openpets-rotate
+#   - launchd: ~/Library/LaunchAgents/com.jm.openpets-rotate.plist
+
+set -o errexit -o pipefail
+
+PETS_DIR="$HOME/Documents/local/jm/openpets/examples/pets"
+PETS=(bean gia ruthie couple)
+
+if [[ ! -d "$PETS_DIR" ]]; then
+  echo "openpets-rotate: pets dir not found: $PETS_DIR" >&2
+  exit 1
+fi
+
+if [[ -n "${1:-}" ]]; then
+  PICK="$1"
+  if [[ ! " ${PETS[*]} " =~ \ $PICK\  ]]; then
+    echo "openpets-rotate: unknown pet '$PICK'. Choose: ${PETS[*]}" >&2
+    exit 2
+  fi
+else
+  PICK="${PETS[$RANDOM % ${#PETS[@]}]}"
+fi
+
+PET_PATH="$PETS_DIR/$PICK"
+if [[ ! -f "$PET_PATH/pet.json" ]]; then
+  echo "openpets-rotate: missing pet.json at $PET_PATH" >&2
+  exit 3
+fi
+
+echo "openpets-rotate: switching to $PICK"
+exec bunx --bun @open-pets/cli install "$PET_PATH"

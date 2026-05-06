@@ -14,6 +14,8 @@
 
 ---
 
+> **JM's fork of [alvinunreal/openpets](https://github.com/alvinunreal/openpets).** Ships four custom pets (Bean, Gia, Ruthie, JM & Partner) and a window-level patch so the pet sits above Ghostty's ⌘+Enter quick-terminal. Run from source — this fork doesn't publish prebuilt releases. For the upstream prebuilt app, see [INSTALL.md](INSTALL.md).
+
 ## What is OpenPets?
 
 OpenPets is a desktop pet that reacts while Claude Code and other coding agents work.
@@ -28,66 +30,73 @@ https://github.com/user-attachments/assets/fbad0d58-8040-4ebb-a26b-73fa497a4ceb
 
 
 
-## Quick start
+## Quick start (this fork)
 
-Install the desktop app, connect it to Claude Code, then enable automatic Claude reactions.
+Run from source. macOS-only as currently set up (rotation uses `launchd`).
 
-### 1. Install OpenPets desktop
-
-Download the latest app from [OpenPets Releases](https://github.com/alvinunreal/openpets/releases/latest):
-
-- **macOS Apple Silicon**: `OpenPets-*-arm64.dmg` or `OpenPets-*-arm64.zip`
-- **Windows**: `OpenPets-Setup-*-x64.exe`
-- **Linux**: `OpenPets-*-x86_64.AppImage` or `OpenPets-*-amd64.deb`
-
-Install or unzip it, then launch OpenPets. You should see the desktop pet and the OpenPets tray/menu-bar icon.
-
-> Current builds are unsigned. macOS or Windows may show a security warning the first time you open the app.
-
-If macOS says the app is damaged or should be moved to Trash, remove the quarantine flag and open it again:
+### 1. Clone and build
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/OpenPets.app
-open /Applications/OpenPets.app
+git clone https://github.com/thebestmensch/openpets.git
+cd openpets
+bun install
+bun run build
 ```
 
-### 2. Connect OpenPets to Claude Code
+### 2. Launch with one of the four pets
 
-Add the OpenPets MCP server:
+```bash
+bun packages/cli/src/index.ts start --pet ./examples/pets/bean
+# or: gia, ruthie, couple
+```
+
+The pet renders on your desktop and a tray icon appears in the macOS menu bar. Quit via the tray menu.
+
+See [examples/pets/README.md](examples/pets/README.md) for what each pet looks like.
+
+### 3. (Optional) Hook up to Claude Code
+
+Add the OpenPets MCP server so Claude can drive pet state:
 
 ```bash
 claude mcp add -s user openpets -- bunx @open-pets/mcp
 ```
 
-Restart Claude Code, then confirm it is listed:
+Restart Claude Code, then verify with `claude mcp list`. Claude can now call `openpets_health`, `openpets_set_state`, `openpets_say`, `openpets_start`, `openpets_release`.
 
-```bash
-claude mcp list
-```
-
-### 3. Enable automatic Claude reactions
-
-For automatic state changes while Claude works, install [Claude Pets](https://github.com/alvinunreal/claude-pets) hooks globally:
+For automatic state changes while Claude works (thinking → editing → success → idle), install Claude Pets hooks:
 
 ```bash
 bunx @open-pets/claude-pets install
 ```
 
-Restart Claude Code. Claude activity will now update the pet automatically:
+Restart Claude Code. Pet now reacts to prompt submits, file edits, shell runs, permission prompts, and completion.
 
-- prompt submitted → thinking
-- file edits → editing
-- shell commands → running/testing
-- permission prompts → waving/waiting
-- completed/failure → success/error, then idle
-
-Test the integration:
+Test it:
 
 ```bash
 bunx @open-pets/claude-pets test-event thinking
 ```
 
-See [INSTALL.md](INSTALL.md) for platform notes and troubleshooting.
+### 4. (Optional) Rotate pets every hour
+
+`scripts/openpets-rotate` swaps the active pet to a random pick from the four. With OpenPets running it hot-swaps via the pet-v1 IPC capability; otherwise it just updates the launch config so the next start picks up the new pet.
+
+```bash
+# install rotation script
+mkdir -p ~/bin
+cp scripts/openpets-rotate ~/bin/openpets-rotate
+chmod +x ~/bin/openpets-rotate
+
+# install launchd agent (rotates every 3600s, does not rotate on login)
+cp scripts/com.jm.openpets-rotate.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.jm.openpets-rotate.plist
+```
+
+Force a specific pet on demand: `openpets-rotate gia` (or `bean`, `ruthie`, `couple`).
+Disable rotation: `launchctl bootout gui/$(id -u)/com.jm.openpets-rotate`.
+
+> The plist hardcodes JM's `$HOME` (`/Users/jm`). If you're not JM, edit `ProgramArguments` and `EnvironmentVariables/HOME` before bootstrapping.
 
 ## Claude Code integration
 
@@ -119,7 +128,7 @@ OpenPets is the desktop app. Use these companion integrations for automatic agen
 Use this if you are working from the source repo:
 
 ```bash
-git clone https://github.com/alvinunreal/openpets.git
+git clone https://github.com/thebestmensch/openpets.git
 cd openpets
 bun install
 bun run build
