@@ -1,8 +1,8 @@
 # Install + troubleshooting (this fork)
 
-Quick start lives in [README.md](README.md). This file covers prereqs, config locations, how to extend (add pets, change always-on-top behavior), and what to do when things break.
+Quick start (download + install) lives in [README.md](README.md). This file covers prereqs, config locations, how to extend (add pets, change always-on-top behavior), and what to do when things break.
 
-This fork runs from source on macOS. Upstream's prebuilt `.dmg` / `.exe` / `.deb` install path is documented at [alvinunreal/openpets](https://github.com/alvinunreal/openpets).
+Prebuilt macOS arm64 `.dmg` lives on [Releases](https://github.com/thebestmensch/openpets/releases/latest). For Windows / Linux, build from source — [upstream](https://github.com/alvinunreal/openpets) publishes those platforms via their own CI.
 
 ## Prereqs
 

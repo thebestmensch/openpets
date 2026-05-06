@@ -14,7 +14,7 @@
 
 ---
 
-> **JM's fork of [alvinunreal/openpets](https://github.com/alvinunreal/openpets).** Ships four custom pets (Bean, Gia, Ruthie, JM & Partner) and a window-level patch so the pet sits above Ghostty's ⌘+Enter quick-terminal. Run from source — this fork doesn't publish prebuilt releases. For the upstream prebuilt app, see [INSTALL.md](INSTALL.md).
+> **JM's fork of [alvinunreal/openpets](https://github.com/alvinunreal/openpets).** Ships four custom pets (Bean, Gia, Ruthie, JM & Partner) and a window-level patch so the pet sits above Ghostty's ⌘+Enter quick-terminal. Prebuilt macOS arm64 `.dmg` on [Releases](https://github.com/thebestmensch/openpets/releases/latest). See [INSTALL.md](INSTALL.md) for troubleshooting and extension docs.
 
 ## What is OpenPets?
 
@@ -32,37 +32,26 @@ https://github.com/user-attachments/assets/fbad0d58-8040-4ebb-a26b-73fa497a4ceb
 
 ## Quick start (this fork)
 
-Run from source. macOS-only as currently set up (rotation uses `launchd`).
+macOS arm64 only (other platforms: build from source — see [Develop / extend](#develop--extend)).
 
-### 0. Prereqs
+### 1. Download and install
 
-[bun](https://bun.sh) on `$PATH`. If you don't have it:
+Grab the latest `.dmg` from [Releases](https://github.com/thebestmensch/openpets/releases/latest):
 
-```bash
-curl -fsSL https://bun.sh/install | bash
-```
+- **macOS Apple Silicon**: `OpenPets-*-arm64.dmg` or `OpenPets-*-arm64.zip`
 
-### 1. Clone and build
+Open the `.dmg`, drag `OpenPets.app` to `/Applications`. The app is signed with JM's Apple Development cert (not a distribution cert), so Gatekeeper may still warn the first time. Strip the quarantine flag:
 
 ```bash
-git clone https://github.com/thebestmensch/openpets.git
-cd openpets
-bun install
-bun run build
+xattr -dr com.apple.quarantine /Applications/OpenPets.app
+open /Applications/OpenPets.app
 ```
 
-### 2. Launch with one of the four pets
-
-```bash
-bun packages/cli/src/index.ts start --pet ./examples/pets/bean
-# or: gia, ruthie, couple
-```
-
-The pet renders on your desktop and a tray icon appears in the macOS menu bar. Quit via the tray menu.
+Pet appears on your desktop, tray icon in the menu bar. Quit via the tray menu.
 
 See [examples/pets/README.md](examples/pets/README.md) for what each pet looks like.
 
-### 3. (Optional) Hook up to Claude Code
+### 2. (Optional) Hook up to Claude Code
 
 Add the OpenPets MCP server so Claude can drive pet state:
 
@@ -86,25 +75,65 @@ Test it:
 bunx @open-pets/claude-pets test-event thinking
 ```
 
-### 4. (Optional) Rotate pets every hour
+### 3. (Optional) Rotate pets every hour
 
-`scripts/openpets-rotate` swaps the active pet to a random pick from the four. With OpenPets running it hot-swaps via the pet-v1 IPC capability; otherwise it just updates the launch config so the next start picks up the new pet.
+The rotation script swaps the active pet to a random pick from the four. With OpenPets running it hot-swaps via the pet-v1 IPC capability; otherwise it just updates the launch config so the next start picks up the new pet.
 
 ```bash
-# install rotation script
+# pull the script + launchd plist from this fork
 mkdir -p ~/bin
-cp scripts/openpets-rotate ~/bin/openpets-rotate
+curl -fsSL https://raw.githubusercontent.com/thebestmensch/openpets/master/scripts/openpets-rotate \
+  -o ~/bin/openpets-rotate
 chmod +x ~/bin/openpets-rotate
 
-# install launchd agent (rotates every 3600s, does not rotate on login)
-cp scripts/com.jm.openpets-rotate.plist ~/Library/LaunchAgents/
+curl -fsSL https://raw.githubusercontent.com/thebestmensch/openpets/master/scripts/com.jm.openpets-rotate.plist \
+  -o ~/Library/LaunchAgents/com.jm.openpets-rotate.plist
+
+# load it (rotates every 3600s, does NOT rotate on login)
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.jm.openpets-rotate.plist
 ```
 
 Force a specific pet on demand: `openpets-rotate gia` (or `bean`, `ruthie`, `couple`).
 Disable rotation: `launchctl bootout gui/$(id -u)/com.jm.openpets-rotate`.
 
-> The plist hardcodes JM's `$HOME` (`/Users/jm`). If you're not JM, edit `ProgramArguments` and `EnvironmentVariables/HOME` before bootstrapping.
+> The script and plist hardcode JM's `$HOME` (`/Users/jm`) and the path to `examples/pets/` inside JM's checkout. If you're not JM, you'll also need to clone the repo locally so the pet directories exist on disk — see [Develop / extend](#develop--extend) for the clone path, then edit `PETS_DIR` in `~/bin/openpets-rotate` and `HOME` / `ProgramArguments` in the plist.
+
+## Develop / extend
+
+Use this if you want to rebuild from source (other platforms, code changes, adding pets).
+
+### Prereqs
+
+[bun](https://bun.sh) on `$PATH`. If you don't have it:
+
+```bash
+curl -fsSL https://bun.sh/install | bash
+```
+
+### Clone and build
+
+```bash
+git clone https://github.com/thebestmensch/openpets.git
+cd openpets
+bun install
+bun run build
+```
+
+### Run from source
+
+```bash
+bun packages/cli/src/index.ts start --pet ./examples/pets/bean
+# or: gia, ruthie, couple
+```
+
+### Build a `.dmg`
+
+```bash
+bun run package:mac
+# artifact at: release/desktop/OpenPets-*-arm64.dmg
+```
+
+For the full extension reference (sprite contract, window-level patch, troubleshooting, etc.), see [INSTALL.md](INSTALL.md).
 
 ## Claude Code integration
 
@@ -131,66 +160,24 @@ OpenPets is the desktop app. Use these companion integrations for automatic agen
 - [Claude Pets](https://github.com/alvinunreal/claude-pets) - Claude Code hooks that update OpenPets while Claude works.
 - [OpenCode Pets](https://github.com/alvinunreal/opencode-pets) - OpenCode plugin integration for OpenPets status updates.
 
-## Development
+## CLI cheatsheet (source builds)
 
-Use this if you are working from the source repo:
-
-```bash
-git clone https://github.com/thebestmensch/openpets.git
-cd openpets
-bun install
-bun run build
-```
-
-Start the desktop pet:
+After `bun run build`:
 
 ```bash
-bun packages/cli/src/index.ts start
-```
-
-Send it a state:
-
-```bash
+# send a state
 bun packages/cli/src/index.ts event thinking --message "Planning the next step"
 bun packages/cli/src/index.ts event testing
 bun packages/cli/src/index.ts event success --message "That worked"
-```
 
-Control the window:
-
-```bash
+# control the window
 bun packages/cli/src/index.ts show
 bun packages/cli/src/index.ts hide
 bun packages/cli/src/index.ts sleep
 bun packages/cli/src/index.ts quit
-```
 
-## Checks
-
-Run tests:
-
-```bash
+# tests + typecheck + dev mode
 bun test packages/core/src packages/client/src packages/cli/src packages/mcp/src
-```
-
-Typecheck everything:
-
-```bash
 bun run typecheck
-```
-
-Build everything:
-
-```bash
-bun run build
-```
-
-Run the desktop in dev mode:
-
-```bash
 bun run dev:desktop
 ```
-
-## Status
-
-OpenPets is available as a v0.1 desktop release for macOS, Windows, and Linux. Code signing and auto-update polish are planned for future releases.
