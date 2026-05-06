@@ -6,6 +6,7 @@ export type OpenPetsConfig = {
   position?: { x: number; y: number };
   scale?: number;
   hidden?: boolean;
+  clickThrough?: boolean;
 };
 
 export const CONFIG_FILE_NAME = "config.json";

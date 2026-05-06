@@ -129,10 +129,12 @@ async function createPetWindow() {
   });
 
   debugLog("created window", { position, bounds: mainWindow.getBounds() });
+  applyClickThroughState();
   mainWindow.on("moved", () => void saveWindowPosition());
   mainWindow.webContents.on("did-finish-load", () => {
     debugLog("renderer did-finish-load");
     showPetWindow("did-finish-load");
+    applyClickThroughState();
     publishState();
   });
   mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
@@ -207,6 +209,12 @@ function createTrayMenuTemplate(): MenuItemConstructorOptions[] {
     {
       label: "Sleep",
       click: () => void handleWindowAction("sleep"),
+    },
+    {
+      label: "Click-through (lock pet)",
+      type: "checkbox",
+      checked: Boolean(config.clickThrough),
+      click: () => void setClickThrough(!config.clickThrough),
     },
     { type: "separator" },
     {
@@ -552,6 +560,19 @@ async function setPetScale(scale: number) {
   await saveConfig(config);
   resizeWindowForCurrentScale();
   publishState();
+}
+
+async function setClickThrough(enabled: boolean) {
+  config = { ...config, clickThrough: enabled };
+  await saveConfig(config);
+  applyClickThroughState();
+  updateTrayMenu();
+}
+
+function applyClickThroughState() {
+  if (!mainWindow) return;
+  if (debugMode) return;
+  mainWindow.setIgnoreMouseEvents(Boolean(config.clickThrough), { forward: true });
 }
 
 async function openConfigFile() {
