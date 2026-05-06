@@ -163,7 +163,7 @@ async function createPetWindow() {
 
 function showPetWindow(reason: string) {
   if (!mainWindow || config.hidden) return;
-  mainWindow.setAlwaysOnTop(true, "floating");
+  mainWindow.setAlwaysOnTop(true, "screen-saver");
   if (debugMode) {
     mainWindow.show();
     mainWindow.focus();
