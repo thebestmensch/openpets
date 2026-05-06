@@ -1,147 +1,181 @@
-# Install OpenPets
+# Install + troubleshooting (this fork)
 
-OpenPets `0.1.0` is a desktop preview. macOS is the known-good baseline; Windows and Linux artifacts are preview-quality until smoke-tested on native hosts.
+Quick start lives in [README.md](README.md). This file covers prereqs, config locations, how to extend (add pets, change always-on-top behavior), and what to do when things break.
 
-## macOS preview install
+This fork runs from source on macOS. Upstream's prebuilt `.dmg` / `.exe` / `.deb` install path is documented at [alvinunreal/openpets](https://github.com/alvinunreal/openpets).
 
-1. Download the latest OpenPets macOS artifact from GitHub Releases.
-2. Open the downloaded `.dmg` or `.zip`.
-3. Move `OpenPets.app` to `/Applications`.
-4. Launch `OpenPets.app`.
-5. Confirm the OpenPets icon appears in the macOS menu bar and the pet appears on your desktop.
+## Prereqs
 
-### Unsigned preview warning
+- macOS 12+ (rotation script + window-level patch are macOS-shaped; pet itself runs anywhere Electron does)
+- [bun](https://bun.sh) on `$PATH`
+- (Optional) Claude Code CLI for MCP integration
 
-Early preview builds may be unsigned. If macOS blocks the app:
-
-1. Open **System Settings → Privacy & Security**.
-2. Find the OpenPets warning.
-3. Choose **Open Anyway**.
-
-Only install OpenPets builds from the official repository or a source you trust.
-
-## Windows preview install
-
-1. Download the Windows artifact from GitHub Releases.
-2. Run the NSIS installer or portable `.exe`.
-3. Launch OpenPets from the Start Menu or the executable.
-4. Confirm the tray icon appears and the pet appears on your desktop.
-
-Early preview builds may be unsigned. Windows SmartScreen may warn before opening the app.
-
-## Linux preview install
-
-1. Download the Linux AppImage or `.deb` artifact from GitHub Releases.
-2. For AppImage, mark it executable if needed:
+## Build from source
 
 ```bash
-chmod +x OpenPets-*.AppImage
-./OpenPets-*.AppImage
+git clone https://github.com/thebestmensch/openpets.git
+cd openpets
+bun install
+bun run build
 ```
 
-3. For `.deb`, install with your package manager.
-4. Confirm the tray icon appears and the pet appears on your desktop.
+Rebuild after pulling upstream changes:
 
-Linux tray support varies by desktop environment. GNOME may require AppIndicator/tray extension support.
+```bash
+git pull
+bun install
+bun run build
+```
 
-## Claude Code setup
+## Config locations (macOS)
 
-After the desktop app is installed and launched once, add the OpenPets MCP server:
+| Path | What |
+|---|---|
+| `~/Library/Application Support/OpenPets/config.json` | active pet pointer + window/tray prefs |
+| `~/Library/Application Support/OpenPets/pets/<slug>-<hash>/` | installed pet packs (added via `openpets install`) |
+| `~/.openpets/sock` | IPC socket (recreated each launch) |
+
+Reset everything: quit OpenPets via tray menu, delete `~/Library/Application Support/OpenPets/`, relaunch.
+
+## Add a new pet
+
+Sprite contract: 1536×1872 PNG, 8 columns × 9 rows of 192×208 frames. See [examples/pets/README.md](examples/pets/README.md) for the row-state mapping and the `pet.json` schema.
+
+Once the directory exists with `pet.json` + spritesheet:
+
+```bash
+bunx --bun @open-pets/cli install ./examples/pets/<new-pet>
+```
+
+If OpenPets is running, the pet hot-swaps via the pet-v1 IPC capability (no restart).
+
+Add to rotation: edit `scripts/openpets-rotate`, append the slug to the `PETS` array.
+
+## Window-level patch
+
+This fork patches `apps/desktop/src/main.ts` line 166:
+
+```ts
+mainWindow.setAlwaysOnTop(true, "screen-saver");
+```
+
+Upstream uses `"floating"` which sits below most macOS hotkey panels (Ghostty ⌘+Enter quick-terminal, Raycast, etc). `"screen-saver"` is the highest non-system Electron level — pet sits above hotkey panels but below the Dock and top menu bar.
+
+Other levels (Electron docs): `floating < torn-off-menu < modal-panel < main-menu < status < pop-up-menu < screen-saver`. To change, edit the line, run `bun run build`, relaunch.
+
+## Hook up to Claude Code
 
 ```bash
 claude mcp add -s user openpets -- bunx @open-pets/mcp
 ```
 
-Restart Claude Code, then confirm it is listed:
+Restart Claude Code, verify with `claude mcp list`. Available tools: `openpets_health`, `openpets_start`, `openpets_set_state`, `openpets_say`, `openpets_release`.
 
-```bash
-claude mcp list
-```
-
-Claude can now use:
-
-- `openpets_health`
-- `openpets_start`
-- `openpets_say`
-- `openpets_set_state`
-- `openpets_release`
-
-### Optional: automatic Claude Code reactions
-
-For automatic pet state changes while Claude works, install Claude Pets hooks globally:
+For automatic state changes:
 
 ```bash
 bunx @open-pets/claude-pets install
 ```
 
-This updates `~/.claude/settings.json`. Restart Claude Code after installing hooks.
+This patches `~/.claude/settings.json` with hooks that fire on prompt submit, edits, shell commands, permission prompts, and completion. Restart Claude Code after install.
 
-Test it with OpenPets running:
+Test:
 
 ```bash
 bunx @open-pets/claude-pets test-event thinking
 ```
 
-The pet should animate briefly, then return to idle.
-
-## OpenCode status
-
-OpenCode integration is planned for the v0.1 ecosystem, but the desktop preview does not require it.
-
 ## Troubleshooting
 
-### The tray/menu-bar icon is missing
-
-- Quit and reopen OpenPets.
-- Check Activity Monitor for duplicate OpenPets processes.
-- Reinstall the latest release artifact.
-
-### Claude says MCP is connected but the pet does not launch
-
-- Launch OpenPets manually once.
-- Run `openpets_health` again.
-- If needed, set an override:
+### Tray icon missing or duplicated
 
 ```bash
-OPENPETS_DESKTOP_COMMAND="open -a OpenPets"
+pkill -f "openpets/apps/desktop"
+bun packages/cli/src/index.ts start --pet ./examples/pets/bean
 ```
 
-Examples:
+If multiple Electron processes show in Activity Monitor, that's the culprit — kill them all and relaunch.
+
+### MCP says connected but pet does not launch
+
+Launch manually first:
 
 ```bash
-# macOS
+bun packages/cli/src/index.ts start --pet ./examples/pets/bean
+```
+
+If you installed a release build to `/Applications/`, set the override env vars upstream documents:
+
+```bash
+# macOS app bundle
 OPENPETS_DESKTOP_COMMAND="open -a OpenPets"
 
-# Windows PowerShell
-$env:OPENPETS_DESKTOP_APP="$env:LOCALAPPDATA\Programs\OpenPets\OpenPets.exe"
-
-# Linux AppImage
-OPENPETS_DESKTOP_APP="$HOME/Applications/OpenPets.AppImage"
+# direct binary
+OPENPETS_DESKTOP_APP="/path/to/binary"
 ```
 
-### Reset OpenPets config
+### Stale IPC socket
 
-OpenPets stores local config at:
+Quit OpenPets via tray menu (or `bun packages/cli/src/index.ts quit`) and relaunch. OpenPets cleans stale same-user IPC sockets on launch.
 
-```txt
-# macOS
-~/Library/Application Support/OpenPets/config.json
+### Pet still covered by Ghostty / Raycast / other hotkey panel
 
-# Windows
-%APPDATA%\OpenPets\config.json
+`screen-saver` is the highest non-system Electron level. If a panel still beats it, that panel is using a true system-level NSPanel that Electron can't reach. Workarounds:
 
-# Linux
-$XDG_CONFIG_HOME/openpets/config.json or ~/.config/openpets/config.json
+- Move the panel (Ghostty: Settings → Quick Terminal Position)
+- Move the pet (drag it elsewhere — its position is per-display)
+- File an upstream issue if you find an even higher Electron level
+
+Verify the patch is in the running build:
+
+```bash
+grep setAlwaysOnTop apps/desktop/src/main.ts
+# should print: mainWindow.setAlwaysOnTop(true, "screen-saver");
 ```
 
-Use the tray menu: **Settings → Reveal Config Folder**, then quit OpenPets and remove `config.json`.
+If it shows `floating`, you're on upstream — `git pull` + `bun run build`.
 
-### IPC/socket seems stale
+### Rotation script not firing
 
-Quit OpenPets from the tray menu and relaunch. OpenPets cleans stale same-user IPC sockets on launch.
+```bash
+# is launchd agent loaded?
+launchctl print gui/$(id -u)/com.jm.openpets-rotate | head -20
 
-### The pet does not appear
+# tail the log
+tail /tmp/openpets-rotate.log
 
-- Use the tray menu item **Show Pet**.
-- Use **Use Default Pet** from the tray menu.
-- Quit and relaunch OpenPets.
+# force-fire now
+launchctl kickstart -k gui/$(id -u)/com.jm.openpets-rotate
+```
+
+If the agent is loaded but never fires, check the plist `StartInterval` (default `3600`) and that `RunAtLoad` is `false` (no rotation on login by design).
+
+If `launchctl bootstrap` fails with "Bootstrap failed: 5: Input/output error", the plist is malformed — `plutil ~/Library/LaunchAgents/com.jm.openpets-rotate.plist` will show why.
+
+### Pet pack does not load
+
+The OpenPets desktop validates each pet on install. If you see "Pet pack failed to load":
+
+```bash
+bunx --bun @open-pets/cli install ./examples/pets/<name>
+```
+
+Verbose error goes to stderr. Common causes:
+
+- Spritesheet not 1536×1872
+- Wrong frame count (must be 8×9)
+- Missing rows in `pet.json` `states` (rows 6/7/8 must exist even if they reuse idle as a placeholder)
+- `spritesheetPath` in `pet.json` does not match the file on disk
+
+## Checks
+
+```bash
+# unit tests
+bun test packages/core/src packages/client/src packages/cli/src packages/mcp/src
+
+# typecheck
+bun run typecheck
+
+# desktop in dev mode
+bun run dev:desktop
+```
