@@ -32,7 +32,7 @@ bun run build
 | Path | What |
 |---|---|
 | `~/Library/Application Support/OpenPets/config.json` | active pet pointer + window/tray prefs |
-| `~/Library/Application Support/OpenPets/pets/<slug>-<hash>/` | installed pet packs (added via `openpets install`) |
+| `~/Library/Application Support/OpenPets/pets/<slug>-<hash>/` | installed pet packs — bundled `bean`, `gia`, `ruthie`, `couple` are seeded here on first launch (each owns a stable hash so re-seeding is idempotent); additional packs added via `openpets install` get a content-derived hash |
 | `~/.openpets/sock` | IPC socket (recreated each launch) |
 
 Reset everything: quit OpenPets via tray menu, delete `~/Library/Application Support/OpenPets/`, relaunch.
