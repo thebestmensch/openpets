@@ -14,7 +14,7 @@
 
 ---
 
-> **JM's fork of [alvinunreal/openpets](https://github.com/alvinunreal/openpets).** Ships four custom pets (Bean, Gia, Ruthie, JM & Partner) and a window-level patch so the pet sits above Ghostty's ⌘+Enter quick-terminal. Prebuilt macOS arm64 `.dmg` on [Releases](https://github.com/thebestmensch/openpets/releases/latest). See [INSTALL.md](INSTALL.md) for troubleshooting and extension docs.
+> **JM's fork of [alvinunreal/openpets](https://github.com/alvinunreal/openpets).** Ships four custom pets — Bean, Gia, Ruthie, and JM & Partner — bundled in the DMG (seeded into `~/Library/Application Support/OpenPets/pets/` on first launch, no manual install) and a window-level patch so the pet sits above Ghostty's ⌘+Enter quick-terminal. Prebuilt macOS arm64 `.dmg` on [Releases](https://github.com/thebestmensch/openpets/releases/latest). See [INSTALL.md](INSTALL.md) for troubleshooting and extension docs.
 
 ## What is OpenPets?
 
@@ -48,6 +48,8 @@ open /Applications/OpenPets.app
 ```
 
 Pet appears on your desktop, tray icon in the menu bar. Quit via the tray menu.
+
+The first launch seeds Bean, Gia, Ruthie, and JM & Partner into `~/Library/Application Support/OpenPets/pets/`. Switch between them from the tray menu (right-click the menubar icon → pick a pet).
 
 See [examples/pets/README.md](examples/pets/README.md) for what each pet looks like.
 

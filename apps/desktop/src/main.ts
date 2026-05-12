@@ -1,4 +1,5 @@
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
@@ -61,6 +62,7 @@ app.whenReady().then(async () => {
   installSecurityHeaders();
   debugLog("app ready", { argv: process.argv, debugMode });
   config = await loadConfig();
+  await seedBundledPets();
   await applyArgv(process.argv);
   installedPets = await loadInstalledPets();
   await startLocalIpcServer();
@@ -546,7 +548,8 @@ async function loadInstalledPets() {
 }
 
 async function useDefaultPet() {
-  const loaded = await loadCodexPetDirectory(getBundledDefaultPetPath());
+  const seeded = await loadCodexPetDirectory(bundledPetTargetDir(DEFAULT_PET_SLUG));
+  const loaded = seeded.ok ? seeded : await loadCodexPetDirectory(getBundledDefaultPetPath());
   if (!loaded.ok) return;
   activePet = loaded.pet;
   const { petPath: _petPath, ...nextConfig } = config;
@@ -675,19 +678,73 @@ function scheduleExpiration() {
 }
 
 async function loadDefaultPet() {
-  const loaded = await loadCodexPetDirectory(getBundledDefaultPetPath());
-  if (loaded.ok) {
-    activePet = loaded.pet;
+  const seededPath = bundledPetTargetDir(DEFAULT_PET_SLUG);
+  const seeded = await loadCodexPetDirectory(seededPath);
+  if (seeded.ok) {
+    activePet = seeded.pet;
+    config = { ...config, petPath: activePet.directory };
+    await saveConfig(config);
+    return;
+  }
+  const fallback = await loadCodexPetDirectory(getBundledDefaultPetPath());
+  if (fallback.ok) {
+    activePet = fallback.pet;
   } else {
-    console.error(loaded.issues.map((item) => item.message).join("\n"));
+    console.error(fallback.issues.map((item) => item.message).join("\n"));
   }
 }
 
-function getBundledDefaultPetPath() {
+const BUNDLED_PET_SLUGS = ["bean", "gia", "ruthie", "couple"] as const;
+const DEFAULT_PET_SLUG: (typeof BUNDLED_PET_SLUGS)[number] = "bean";
+
+function getBundledPetsRoot() {
   if (app.isPackaged) {
-    return join(process.resourcesPath, "pets", "slayer");
+    return join(process.resourcesPath, "pets");
   }
-  return resolve(__dirname, "../../../examples/pets/slayer");
+  return resolve(__dirname, "../../../examples/pets");
+}
+
+function getBundledDefaultPetPath() {
+  return join(getBundledPetsRoot(), DEFAULT_PET_SLUG);
+}
+
+function bundledPetTargetDir(slug: string) {
+  const hash = createHash("sha256").update(`bundled:${slug}`).digest("hex").slice(0, 8);
+  return join(getOpenPetsPetsDir(), `${slug}-${hash}`);
+}
+
+async function seedBundledPets() {
+  const root = getBundledPetsRoot();
+  const petsDir = getOpenPetsPetsDir();
+  await mkdir(petsDir, { recursive: true });
+
+  for (const slug of BUNDLED_PET_SLUGS) {
+    const source = join(root, slug);
+    const target = bundledPetTargetDir(slug);
+
+    const existing = await loadCodexPetDirectory(target);
+    if (existing.ok) continue;
+
+    const stagingDir = `${target}.tmp-${process.pid}-${Date.now()}`;
+    try {
+      await rm(stagingDir, { recursive: true, force: true });
+      await cp(source, stagingDir, { recursive: true, errorOnExist: false, force: true });
+      const staged = await loadCodexPetDirectory(stagingDir);
+      if (!staged.ok) {
+        console.error(
+          `Failed to validate seeded pet ${slug}:`,
+          staged.issues.map((item) => item.message).join("\n"),
+        );
+        await rm(stagingDir, { recursive: true, force: true });
+        continue;
+      }
+      await rm(target, { recursive: true, force: true });
+      await rename(stagingDir, target);
+    } catch (error) {
+      console.error(`Failed to seed bundled pet ${slug}:`, error);
+      await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
 }
 
 function normalizeScale(scale: unknown) {

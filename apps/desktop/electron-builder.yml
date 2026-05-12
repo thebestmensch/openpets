@@ -10,8 +10,14 @@ files:
   - package.json
 
 extraResources:
-  - from: ../../examples/pets/slayer
-    to: pets/slayer
+  - from: ../../examples/pets/bean
+    to: pets/bean
+  - from: ../../examples/pets/gia
+    to: pets/gia
+  - from: ../../examples/pets/ruthie
+    to: pets/ruthie
+  - from: ../../examples/pets/couple
+    to: pets/couple
   - from: ../../assets/tray-icon.png
     to: assets/tray-icon.png
 
