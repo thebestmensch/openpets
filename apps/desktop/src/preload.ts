@@ -25,6 +25,9 @@ const api = {
       ipcRenderer.send("window-action", action);
     }
   },
+  setBubbleActive(active: boolean) {
+    ipcRenderer.send("bubble-active", Boolean(active));
+  },
   petInteraction(interaction: unknown) {
     if (!interaction || typeof interaction !== "object") return;
     const record = interaction as Record<string, unknown>;

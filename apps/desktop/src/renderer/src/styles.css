@@ -25,9 +25,13 @@ body,
   width: 100%;
   height: 100%;
   display: grid;
-  grid-template-rows: 72px 1fr;
+  grid-template-rows: 0 1fr;
   justify-items: center;
   align-items: end;
+}
+
+.pet-container.has-bubble {
+  grid-template-rows: 72px 1fr;
 }
 
 .pet-hitbox {

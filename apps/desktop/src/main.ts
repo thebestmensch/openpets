@@ -1,5 +1,6 @@
-import { cp, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
@@ -31,6 +32,9 @@ const SPEECH_BUBBLE_SLOT_HEIGHT = 72;
 const SPEECH_BUBBLE_MAX_OUTER_WIDTH = 168;
 const MIN_WINDOW_WIDTH = 128;
 const DEFAULT_PET_SCALE = 1;
+const DEFAULT_FOCUS_FOLLOW_APP = "ghostty";
+const FOCUS_POLL_INTERVAL_MS = 500;
+const FOCUS_POLL_FAILURE_THRESHOLD = 5;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -46,6 +50,13 @@ let tray: Tray | null = null;
 let debugMode = isDebugEnabled(process.argv);
 let dragState: { startCursor: { x: number; y: number }; startBounds: Rectangle } | null = null;
 let rendererReady = false;
+let bubbleSlotActive = false;
+let focusFollowHidden = false;
+let focusPollTimer: ReturnType<typeof setInterval> | null = null;
+let focusPollInFlight = false;
+let focusPollFailures = 0;
+let frontwinBinaryPath: string | null = null;
+let frontwinLastWarningAt = 0;
 
 const singleInstance = app.requestSingleInstanceLock();
 if (!singleInstance) {
@@ -69,10 +80,12 @@ app.whenReady().then(async () => {
   createTray();
   await createPetWindow();
   publishState();
+  applyFocusFollowConfig();
 });
 
 app.on("before-quit", () => {
   void ipcServerHandle?.close();
+  stopFocusFollow();
 });
 
 app.on("window-all-closed", () => {
@@ -89,6 +102,9 @@ ipcMain.on("window-action", (_event, action: unknown) => {
   }
 });
 ipcMain.on("pet-interaction", (_event, interaction: unknown) => handlePetInteraction(interaction));
+ipcMain.on("bubble-active", (_event, active: unknown) => {
+  setBubbleSlotActive(Boolean(active));
+});
 
 async function createPetWindow() {
   const display = screen.getPrimaryDisplay();
@@ -166,7 +182,7 @@ async function createPetWindow() {
 }
 
 function showPetWindow(reason: string) {
-  if (!mainWindow || config.hidden) return;
+  if (!mainWindow || config.hidden || focusFollowHidden) return;
   mainWindow.setAlwaysOnTop(true, "screen-saver");
   if (debugMode) {
     mainWindow.show();
@@ -174,6 +190,7 @@ function showPetWindow(reason: string) {
   } else {
     mainWindow.showInactive();
   }
+  resizeWindowForCurrentScale();
   debugLog("show window", { reason, visible: mainWindow.isVisible(), bounds: mainWindow.getBounds() });
 }
 
@@ -217,6 +234,13 @@ function createTrayMenuTemplate(): MenuItemConstructorOptions[] {
       type: "checkbox",
       checked: Boolean(config.clickThrough),
       click: () => void setClickThrough(!config.clickThrough),
+    },
+    {
+      label: `Hide when ${getFocusFollowApp()} not on screen`,
+      type: "checkbox",
+      checked: Boolean(config.focusFollowEnabled),
+      enabled: process.platform === "darwin",
+      click: () => void setFocusFollowEnabled(!config.focusFollowEnabled),
     },
     { type: "separator" },
     {
@@ -640,12 +664,33 @@ function handlePetInteraction(interaction: unknown) {
   }
 }
 
+let savingWindowPosition = false;
 async function saveWindowPosition() {
   if (dragState) return;
-  const bounds = mainWindow?.getBounds();
-  if (!bounds) return;
-  config = { ...config, position: { x: bounds.x, y: bounds.y } };
-  await saveConfig(config);
+  // Re-entrancy guard: our own setPosition below emits a "moved" event, which
+  // re-enters here. The clamp is idempotent so it short-circuits in the steady
+  // state, but if anything resizes the window between the user's drop and the
+  // re-entry (e.g. a bubble-active IPC firing), the clamp picks a slightly
+  // different position and we ping-pong before settling. Single-flight it.
+  if (savingWindowPosition) return;
+  savingWindowPosition = true;
+  try {
+    const bounds = mainWindow?.getBounds();
+    if (!bounds) return;
+    // Clamp to workArea: macOS NSWindow.constrainFrameRect snaps off-screen
+    // windows back inside on the next show, which looked like the pet drifting
+    // on hide/show cycles when the user dragged it partially off-screen (most
+    // visible at the right edge). Apply the snap now so what they drop is
+    // where it stays.
+    const clamped = clampWindowPosition({ x: bounds.x, y: bounds.y }, { width: bounds.width, height: bounds.height });
+    if ((clamped.x !== bounds.x || clamped.y !== bounds.y) && mainWindow) {
+      mainWindow.setPosition(clamped.x, clamped.y, false);
+    }
+    config = { ...config, position: clamped };
+    await saveConfig(config);
+  } finally {
+    savingWindowPosition = false;
+  }
 }
 
 async function loadConfig(): Promise<OpenPetsConfig> {
@@ -761,10 +806,21 @@ function getWindowContentSize() {
   const visualScale = getVisualScale();
   const petWidth = Math.ceil(CODEX_FRAME_WIDTH * visualScale);
   const petHeight = Math.ceil(CODEX_FRAME_HEIGHT * visualScale);
+  const bubbleSlot = bubbleSlotActive ? SPEECH_BUBBLE_SLOT_HEIGHT : 0;
+  // When the speech bubble is showing, reserve its full max width so word-wrap is stable.
+  // When it's not, shrink to the pet's actual bounding box so the user can park the pet
+  // close to a screen edge without transparent padding pushing the window off-screen.
+  const bubbleWidthFloor = bubbleSlotActive ? SPEECH_BUBBLE_MAX_OUTER_WIDTH : 0;
   return {
-    width: Math.ceil(Math.max(petWidth + PET_SAFE_PAD_X * 2, SPEECH_BUBBLE_MAX_OUTER_WIDTH, MIN_WINDOW_WIDTH)),
-    height: Math.ceil(SPEECH_BUBBLE_SLOT_HEIGHT + PET_SAFE_PAD_TOP + petHeight + PET_SAFE_PAD_BOTTOM),
+    width: Math.ceil(Math.max(petWidth + PET_SAFE_PAD_X * 2, bubbleWidthFloor, MIN_WINDOW_WIDTH)),
+    height: Math.ceil(bubbleSlot + PET_SAFE_PAD_TOP + petHeight + PET_SAFE_PAD_BOTTOM),
   };
+}
+
+function setBubbleSlotActive(active: boolean) {
+  if (bubbleSlotActive === active) return;
+  bubbleSlotActive = active;
+  resizeWindowForCurrentScale();
 }
 
 function clampWindowPosition(position: { x: number; y: number }, size: { width: number; height: number }) {
@@ -777,6 +833,7 @@ function clampWindowPosition(position: { x: number; y: number }, size: { width: 
 
 function resizeWindowForCurrentScale() {
   if (!mainWindow) return;
+  if (!mainWindow.isVisible()) return;
   const size = getWindowContentSize();
   const [currentWidth, currentHeight] = mainWindow.getContentSize();
   if (currentWidth === size.width && currentHeight === size.height) return;
@@ -796,6 +853,164 @@ function resizeWindowForCurrentScale() {
 function clamp(value: number, min: number, max: number) {
   if (max < min) return min;
   return Math.min(max, Math.max(min, value));
+}
+
+function getFocusFollowApp() {
+  const raw = config.focusFollowApp;
+  return typeof raw === "string" && raw.trim() ? raw.trim() : DEFAULT_FOCUS_FOLLOW_APP;
+}
+
+function applyFocusFollowConfig() {
+  if (config.focusFollowEnabled && process.platform === "darwin") {
+    startFocusFollow();
+  } else {
+    stopFocusFollow();
+  }
+}
+
+function startFocusFollow() {
+  if (focusPollTimer) return;
+  void pollFocusOnce();
+  focusPollTimer = setInterval(() => void pollFocusOnce(), FOCUS_POLL_INTERVAL_MS);
+}
+
+function stopFocusFollow() {
+  if (focusPollTimer) {
+    clearInterval(focusPollTimer);
+    focusPollTimer = null;
+  }
+  focusPollFailures = 0;
+  if (focusFollowHidden) {
+    focusFollowHidden = false;
+    showPetWindow("focus-follow-disabled");
+  }
+}
+
+async function pollFocusOnce() {
+  if (focusPollInFlight) return;
+  focusPollInFlight = true;
+  try {
+    const target = getFocusFollowApp();
+    const visible = await isTargetAppOnScreen(target);
+    if (visible === null) {
+      focusPollFailures += 1;
+      if (focusPollFailures >= FOCUS_POLL_FAILURE_THRESHOLD && config.focusFollowEnabled) {
+        await handleFocusFollowPersistentFailure();
+      }
+      return;
+    }
+    focusPollFailures = 0;
+    if (visible && focusFollowHidden) {
+      focusFollowHidden = false;
+      showPetWindow("focus-follow-match");
+    } else if (!visible && !focusFollowHidden) {
+      focusFollowHidden = true;
+      mainWindow?.hide();
+    }
+  } finally {
+    focusPollInFlight = false;
+  }
+}
+
+let lastDetectionPath: "frontwin" | "osascript" = "osascript";
+async function isTargetAppOnScreen(target: string): Promise<boolean | null> {
+  const bin = await resolveFrontwinBinary();
+  if (bin) {
+    lastDetectionPath = "frontwin";
+    return runFrontwin(bin, target);
+  }
+  lastDetectionPath = "osascript";
+  const frontmost = await getFrontmostAppName();
+  if (frontmost === null) return null;
+  return frontmost.toLowerCase() === target.toLowerCase();
+}
+
+function runFrontwin(bin: string, target: string): Promise<boolean | null> {
+  return new Promise((resolveResult) => {
+    execFile(bin, [target], { timeout: 1500 }, (error, stdout) => {
+      if (error) {
+        resolveResult(null);
+        return;
+      }
+      const verdict = stdout.trim();
+      if (verdict === "visible") resolveResult(true);
+      else if (verdict === "hidden") resolveResult(false);
+      else resolveResult(null);
+    });
+  });
+}
+
+async function resolveFrontwinBinary(): Promise<string | null> {
+  // Cached when the helper exists; re-checked on each call when missing so a
+  // mid-session rebuild (e.g. `bun run build:frontwin`) recovers without
+  // restarting the app. Warning is throttled to once per 5 minutes.
+  if (frontwinBinaryPath) return frontwinBinaryPath;
+  if (process.platform !== "darwin") return null;
+
+  const candidate = app.isPackaged
+    ? join(process.resourcesPath, "helpers", "frontwin")
+    : resolve(__dirname, "frontwin");
+  try {
+    await stat(candidate);
+    frontwinBinaryPath = candidate;
+    return candidate;
+  } catch (error) {
+    const now = Date.now();
+    if (now - frontwinLastWarningAt > 5 * 60_000) {
+      frontwinLastWarningAt = now;
+      console.error(
+        `OpenPets: frontwin helper not found at ${candidate}; focus-follow will fall back to frontmost-only detection ` +
+          `(floating panels such as the Ghostty hotkey terminal will not be detected). ${String(error)}`,
+      );
+    }
+    return null;
+  }
+}
+
+async function handleFocusFollowPersistentFailure() {
+  const target = getFocusFollowApp();
+  const usedFrontwin = lastDetectionPath === "frontwin";
+  const detail = usedFrontwin
+    ? "The bundled window-detection helper failed repeatedly. Reinstall OpenPets, or rebuild from source with `bun run build:frontwin`, then re-enable from the tray menu."
+    : "Grant Automation access to System Events in System Settings → Privacy & Security → Automation, then re-enable from the tray menu.";
+  console.error(
+    `OpenPets: focus-follow disabled after ${FOCUS_POLL_FAILURE_THRESHOLD} consecutive detection failures via ${lastDetectionPath}. ${detail}`,
+  );
+  // Re-check enabled state before showing UI: user may have toggled off between
+  // the last poll and now.
+  if (!config.focusFollowEnabled) return;
+  await setFocusFollowEnabled(false);
+  void dialog.showMessageBox({
+    type: "warning",
+    title: "OpenPets focus-follow disabled",
+    message: `OpenPets can't tell whether ${target} is on screen, so "Hide when ${target} not on screen" has been turned off.`,
+    detail,
+  });
+}
+
+function getFrontmostAppName(): Promise<string | null> {
+  return new Promise((resolveName) => {
+    execFile(
+      "osascript",
+      ["-e", 'tell application "System Events" to get name of first application process whose frontmost is true'],
+      { timeout: 1500 },
+      (error, stdout) => {
+        if (error) {
+          resolveName(null);
+          return;
+        }
+        const name = stdout.trim();
+        resolveName(name || null);
+      },
+    );
+  });
+}
+
+async function setFocusFollowEnabled(enabled: boolean) {
+  config = { ...config, focusFollowEnabled: enabled };
+  await saveConfig(config);
+  applyFocusFollowConfig();
+  updateTrayMenu();
 }
 
 function isDebugEnabled(argv: string[]) {

@@ -33,20 +33,28 @@ export function App() {
     const message = petState.event?.message;
     if (!message) {
       setVisibleMessage(null);
-      return;
+      const id = requestAnimationFrame(() => window.openPets.setBubbleActive(false));
+      return () => cancelAnimationFrame(id);
     }
 
-    setVisibleMessage(message);
+    window.openPets.setBubbleActive(true);
+    const showId = requestAnimationFrame(() => setVisibleMessage(message));
     const timeout = setTimeout(
-      () => setVisibleMessage(null),
+      () => {
+        setVisibleMessage(null);
+        requestAnimationFrame(() => window.openPets.setBubbleActive(false));
+      },
       petState.event?.state === "success" || petState.event?.state === "error" ? 5000 : 4000,
     );
-    return () => clearTimeout(timeout);
+    return () => {
+      cancelAnimationFrame(showId);
+      clearTimeout(timeout);
+    };
   }, [petState.event?.message, petState.event?.timestamp, petState.event?.state]);
 
   return (
     <main className="overlay-shell">
-      <div className="pet-container">
+      <div className={`pet-container${visibleMessage ? " has-bubble" : ""}`}>
         {visibleMessage ? <div className="speech-bubble">{visibleMessage}</div> : null}
         <PetSprite
           state={petState.state}

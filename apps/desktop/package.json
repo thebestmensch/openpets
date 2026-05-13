@@ -1,6 +1,6 @@
 {
   "name": "@open-pets/desktop",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "OpenPets desktop tray app.",
   "license": "MIT",
@@ -12,14 +12,15 @@
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
-    "dev": "bun run build:main && bun run build:preload && bunx vite --host 127.0.0.1",
+    "dev": "bun run build:main && bun run build:preload && bun run build:frontwin && bunx vite --host 127.0.0.1",
     "start": "bun run build && bunx electron dist/main.js",
-    "build": "bun run build:main && bun run build:preload && bunx vite build",
+    "build": "bun run build:main && bun run build:preload && bun run build:frontwin && bunx vite build",
     "package:mac": "bun run build && bunx electron-builder --mac --arm64 --config electron-builder.yml",
     "package:win": "bun run build && bunx electron-builder --win --x64 --config electron-builder.yml",
     "package:linux": "bun run build && bunx electron-builder --linux --x64 --config electron-builder.yml",
     "build:main": "bun build src/main.ts --target=node --external electron --outdir dist",
     "build:preload": "bun build src/preload.ts --target=node --format=cjs --external electron --outfile dist/preload.cjs",
+    "build:frontwin": "node scripts/build-frontwin.mjs",
     "typecheck": "bunx tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

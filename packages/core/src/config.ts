@@ -7,6 +7,10 @@ export type OpenPetsConfig = {
   scale?: number;
   hidden?: boolean;
   clickThrough?: boolean;
+  /** When true, the pet only stays visible while {@link focusFollowApp} has at least one window on screen. */
+  focusFollowEnabled?: boolean;
+  /** macOS process owner name (as reported by CGWindowList / System Events). Defaults to "ghostty". */
+  focusFollowApp?: string;
 };
 
 export const CONFIG_FILE_NAME = "config.json";

@@ -24,6 +24,9 @@ extraResources:
 mac:
   category: public.app-category.developer-tools
   icon: build/icon.icns
+  extraResources:
+    - from: dist/frontwin
+      to: helpers/frontwin
   target:
     - target: dmg
       arch:
