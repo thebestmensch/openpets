@@ -694,7 +694,7 @@ async function loadDefaultPet() {
   }
 }
 
-const BUNDLED_PET_SLUGS = ["bean", "gia", "ruthie", "couple"] as const;
+const BUNDLED_PET_SLUGS = ["bean", "gia", "ruthie", "ollie", "couple"] as const;
 const DEFAULT_PET_SLUG: (typeof BUNDLED_PET_SLUGS)[number] = "bean";
 
 function getBundledPetsRoot() {

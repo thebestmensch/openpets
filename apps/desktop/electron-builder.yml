@@ -16,6 +16,8 @@ extraResources:
     to: pets/gia
   - from: ../../examples/pets/ruthie
     to: pets/ruthie
+  - from: ../../examples/pets/ollie
+    to: pets/ollie
   - from: ../../examples/pets/couple
     to: pets/couple
   - from: ../../assets/tray-icon.png

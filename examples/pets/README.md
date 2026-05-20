@@ -16,6 +16,7 @@ Each pet directory contains:
 | Bean | `examples/pets/bean` | JM's tricolor Mini Australian Shepherd × Blue Heeler mix. |
 | Gia | `examples/pets/gia` | JM's agouti-mask Siberian Husky with ice-blue eyes. |
 | Ruthie | `examples/pets/ruthie` | JM's red-and-white Alaskan Klee Kai. |
+| Ollie | `examples/pets/ollie` | A scruffy black tricolor Mini Australian Shepherd puppy. |
 | Couple | `examples/pets/couple` | Pixel-art chibi bust portrait of JM and partner. |
 
 ## Usage
@@ -25,6 +26,7 @@ openpets start --pet ./examples/pets/slayer
 openpets start --pet ./examples/pets/bean
 openpets start --pet ./examples/pets/gia
 openpets start --pet ./examples/pets/ruthie
+openpets start --pet ./examples/pets/ollie
 openpets start --pet ./examples/pets/couple
 ```
 
@@ -38,6 +40,6 @@ Replace `bean` with any pet directory name above.
 
 The legacy generated minimal sample remains available at `examples/sample-pet` for loader testing.
 
-## Notes on JM pets (bean / gia / ruthie / couple)
+## Notes on Recraft-sourced pets (bean / gia / ruthie / ollie / couple)
 
-These are personal pet packs sourced from photo references via Recraft web UI. They use Option B sprite layout: 1 hero pose per row, replicated across 8 columns — state changes work, but no within-row animation. Rows 6/7/8 (waiting / running / review) reuse idle as a placeholder so the loader passes.
+These pet packs are sourced via Recraft web UI. They use Option B sprite layout: 1 hero pose per row, replicated across 8 columns — state changes work, but no within-row animation. Rows 6/7/8 (waiting / running / review) reuse idle as a placeholder so the loader passes.
